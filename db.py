@@ -12,7 +12,12 @@ save never leaves half-written data).
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
+import secrets
+import time
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
@@ -36,6 +41,7 @@ ITEM_DB = {"Txn ID": "txn_id", "Product": "product", "Qty": "qty", "Rate": "rate
 PROD_DB = {"Product": "product", "Unit": "unit", "Rate": "rate"}
 
 TABLES = ("transactions", "items", "products", "parties")
+ALL_TABLES = ("transactions", "items", "products", "parties", "app_users", "activity_logs")
 
 DDL = [
     """CREATE TABLE IF NOT EXISTS transactions (
@@ -48,8 +54,13 @@ DDL = [
         txn_id TEXT, product TEXT, qty NUMERIC(14,3), rate NUMERIC(14,2), amount NUMERIC(14,2))""",
     "CREATE TABLE IF NOT EXISTS products (product TEXT PRIMARY KEY, unit TEXT, rate NUMERIC(14,2))",
     "CREATE TABLE IF NOT EXISTS parties (party TEXT PRIMARY KEY)",
+    """CREATE TABLE IF NOT EXISTS app_users (
+        username TEXT PRIMARY KEY, password_hash TEXT, full_name TEXT, role TEXT, created_at TIMESTAMP)""",
+    """CREATE TABLE IF NOT EXISTS activity_logs (
+        log_id TEXT PRIMARY KEY, log_time TIMESTAMP, user_name TEXT, action TEXT, details TEXT)""",
     "CREATE INDEX IF NOT EXISTS idx_items_txn ON items (txn_id)",
     "CREATE INDEX IF NOT EXISTS idx_tx_party ON transactions (party)",
+    "CREATE INDEX IF NOT EXISTS idx_logs_time ON activity_logs (log_time)",
 ]
 
 
@@ -104,14 +115,148 @@ def init_db() -> bool:
         if eng.dialect.name == "postgresql":
             # Row Level Security ON with no policies: Supabase's public web API can NOT
             # read your data. The app connects directly, so it is not affected.
-            for t in TABLES:
+            for t in ALL_TABLES:
                 conn.execute(text(f"ALTER TABLE {t} ENABLE ROW LEVEL SECURITY"))
+        _ensure_default_admin(conn)
     return True
 
 
 def ping() -> None:
     with get_engine().connect() as conn:
         conn.execute(text("SELECT 1"))
+
+
+# ---------------------------------------------------------------- security & users
+def hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100_000)
+    return f"{salt}:{key.hex()}"
+
+
+def verify_password(stored: str, provided: str) -> bool:
+    if not stored or ":" not in stored:
+        return False
+    try:
+        salt, key_hex = stored.split(":", 1)
+        new_key = hashlib.pbkdf2_hmac("sha256", provided.encode("utf-8"), salt.encode("utf-8"), 100_000)
+        return hmac.compare_digest(new_key.hex(), key_hex)
+    except Exception:
+        return False
+
+
+def _ensure_default_admin(conn) -> None:
+    try:
+        res = conn.execute(text("SELECT count(*) FROM app_users")).fetchone()
+        count = res[0] if res else 0
+        if count == 0:
+            initial_pwd = _secret("APP_ADMIN_PASSWORD") or _secret("APP_PASSWORD") or "admin123"
+            initial_user = _secret("APP_ADMIN_USER") or "admin"
+            pwd_hash = hash_password(initial_pwd)
+            conn.execute(
+                text("INSERT INTO app_users (username, password_hash, full_name, role, created_at) "
+                     "VALUES (:u, :h, :fn, :r, :ca)"),
+                {"u": initial_user.strip().lower(), "h": pwd_hash, "fn": "Administrator", "r": "Admin",
+                 "ca": datetime.now()},
+            )
+    except Exception:
+        pass
+
+
+def authenticate(username: str, password: str) -> dict | None:
+    init_db()
+    u = username.strip().lower()
+    with get_engine().connect() as conn:
+        row = conn.execute(
+            text("SELECT username, password_hash, full_name, role FROM app_users WHERE username = :u"),
+            {"u": u},
+        ).fetchone()
+        if not row:
+            return None
+        uname, p_hash, full_name, role = row[0], row[1], row[2], row[3]
+        if verify_password(p_hash, password):
+            return {"username": uname, "full_name": full_name or uname, "role": role or "Staff"}
+    return None
+
+
+def get_all_users() -> pd.DataFrame:
+    init_db()
+    with get_engine().connect() as conn:
+        df = pd.read_sql(text("SELECT username, full_name, role, created_at FROM app_users ORDER BY username"), conn)
+    return df
+
+
+def add_user(username: str, password: str, full_name: str, role: str = "Staff") -> tuple[bool, str]:
+    u = username.strip().lower()
+    if not u or len(u) < 3:
+        return False, "Username must be at least 3 characters."
+    if not password or len(password) < 4:
+        return False, "Password must be at least 4 characters."
+    init_db()
+    eng = get_engine()
+    with eng.begin() as conn:
+        ex = conn.execute(text("SELECT 1 FROM app_users WHERE username = :u"), {"u": u}).fetchone()
+        if ex:
+            return False, f"Username '{u}' already exists."
+        pwd_hash = hash_password(password)
+        conn.execute(
+            text("INSERT INTO app_users (username, password_hash, full_name, role, created_at) "
+                 "VALUES (:u, :h, :fn, :r, :ca)"),
+            {"u": u, "h": pwd_hash, "fn": full_name.strip() or u, "r": role, "ca": datetime.now()},
+        )
+    return True, f"User '{u}' created successfully."
+
+
+def update_user_password(username: str, new_password: str) -> tuple[bool, str]:
+    u = username.strip().lower()
+    if not new_password or len(new_password) < 4:
+        return False, "Password must be at least 4 characters."
+    init_db()
+    pwd_hash = hash_password(new_password)
+    with get_engine().begin() as conn:
+        res = conn.execute(text("UPDATE app_users SET password_hash = :h WHERE username = :u"),
+                           {"h": pwd_hash, "u": u})
+        if res.rowcount == 0:
+            return False, "User not found."
+    return True, "Password updated successfully."
+
+
+def delete_user(username: str) -> tuple[bool, str]:
+    u = username.strip().lower()
+    init_db()
+    with get_engine().begin() as conn:
+        res = conn.execute(text("SELECT count(*) FROM app_users")).fetchone()
+        if res and res[0] <= 1:
+            return False, "Cannot delete the last remaining user account."
+        del_res = conn.execute(text("DELETE FROM app_users WHERE username = :u"), {"u": u})
+        if del_res.rowcount == 0:
+            return False, "User not found."
+    return True, f"User '{u}' deleted."
+
+
+# ---------------------------------------------------------------- audit activity log
+def log_activity(user_name: str, action: str, details: str) -> None:
+    try:
+        init_db()
+        log_id = f"LOG-{int(time.time()*1000)}-{secrets.token_hex(3)}"
+        with get_engine().begin() as conn:
+            conn.execute(
+                text("INSERT INTO activity_logs (log_id, log_time, user_name, action, details) "
+                     "VALUES (:id, :t, :u, :a, :d)"),
+                {"id": log_id, "t": datetime.now(), "u": user_name or "System", "a": action, "d": details},
+            )
+    except Exception:
+        pass
+
+
+def get_activity_logs(limit: int = 150) -> pd.DataFrame:
+    init_db()
+    with get_engine().connect() as conn:
+        df = pd.read_sql(
+            text("SELECT log_time AS \"Time\", user_name AS \"User\", action AS \"Action\", details AS \"Details\" "
+                 "FROM activity_logs ORDER BY log_time DESC LIMIT :lim"),
+            conn, params={"lim": limit},
+        )
+    return df
 
 
 # ---------------------------------------------------------------- load / save
@@ -170,3 +315,12 @@ def save_all(tx, items, products, parties, only: tuple[str, ...] = TABLES) -> No
             p = pd.DataFrame({"party": sorted(set(x for x in parties if x))})
             _replace_table(conn, "parties", p)
     _load_cached.clear()  # next load sees the new data (for every user)
+
+
+def delete_transaction_atomic(txn_id: str) -> None:
+    """Delete a transaction and all its associated items atomically."""
+    init_db()
+    with get_engine().begin() as conn:
+        conn.execute(text("DELETE FROM transactions WHERE txn_id = :id"), {"id": txn_id})
+        conn.execute(text("DELETE FROM items WHERE txn_id = :id"), {"id": txn_id})
+    _load_cached.clear()

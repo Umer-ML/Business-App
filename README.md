@@ -1,17 +1,44 @@
-# Enterprise Business & Accounts Management System (Cloud Ready)
+# Enterprise Business & Accounts Management System (v4 - Executive Edition)
 
-Professional Streamlit Billing, Invoicing & Accounts Ledger app with PostgreSQL / SQLite storage.
+Professional, cloud-ready Streamlit Billing, Invoicing & Accounts Ledger system with PostgreSQL / SQLite storage, multi-user authentication, audit logs, and mobile-responsive fintech styling.
 Data is automatically synced with cloud database (Supabase / Neon / PostgreSQL) or local SQLite, ensuring zero data loss across redeployments or server restarts.
 
 ---
 
-## 🌟 Key Features & Capabilities
+## 🌟 Key Features & Capabilities (Top 1% Suite)
 
-1. **Executive Dashboard**:
-   - Live KPI cards: Total Billed, Total Received, Outstanding Receivables, Total Returns.
+1. **Multi-User Security & Sign-In**:
+   - Secure login portal with Username & Password authentication.
+   - Salted PBKDF2 with SHA-256 password hashing (zero external dependency).
+   - Role-based access control: **Administrator** (full access + user management) & **Staff** (transactions & collections).
+   - User Accounts manager to create staff accounts and update credentials.
+
+2. **Full Transaction Management (Edit & Delete Wrong Entries)**:
+   - **Edit Bill**: Easily correct any mistaken entry (Date, Bill No, Party, Subtotal, Discount, Tax, Paid Amount, Remarks). Recalculates balance and payment status automatically.
+   - **Delete Transaction**: Safely remove any accidental or duplicate invoice with safety confirmation. Atomically purges transaction and line items from database.
+   - **Row-level item removal**: Dynamic line-item builder with individual item add/remove/clear controls.
+
+3. **Executive Fintech UI & Mobile-First Responsiveness**:
+   - Ultra-modern styling with glass cards, typography hierarchy (Inter), and subtle elevation shadows.
+   - Fully optimized for smartphones and tablets (`@media (max-width: 768px)`): KPI metrics wrap into clean 2-column cards, touch-friendly buttons (min 44px), and responsive item cards.
+
+4. **Instant WhatsApp Invoice & Payment Reminders**:
+   - 1-click WhatsApp message generation with formatted Urdu/English polite business reminder.
+   - Generates direct `wa.me` links with customer's bill total, paid amount, and outstanding balance.
+
+5. **Thermal POS Receipt & Printable Slips**:
+   - Printable 80mm / 58mm thermal receipt preview right inside the browser.
+   - Works alongside high-resolution downloadable PDF Invoices.
+
+6. **Audit Trail & Activity Log**:
+   - Live activity tracking: records timestamps and usernames for logins, bill creations, edits, deletions, payments, returns, and backups.
+   - Searchable and exportable to Excel for complete business accountability.
+
+7. **Executive Dashboard**:
+   - Live KPI cards: Total Billed, Total Received, Outstanding Receivables, Total Returns, and Collection Recovery %.
    - Live status counts: Unpaid, Partially Paid, Fully Paid, Cheques Pending.
    - Interactive charts: Top 5 Outstanding Debtors & Monthly Billed vs Received trend.
-   - Recent Transactions table.
+   - Quick Action navigation bar.
 
 2. **New Transaction (Invoicing)**:
    - Dynamic line-item billing with instant auto-calculation.

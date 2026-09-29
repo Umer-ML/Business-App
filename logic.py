@@ -50,7 +50,8 @@ GROUPS = [
     ("Overview", ["Dashboard"]),
     ("Transactions", ["New Transaction", "Bills & Payments", "Cheque Tracker"]),
     ("Records", ["Party Ledger", "Parties Directory", "Search Center", "Products", "Master Database"]),
-    ("Data", ["Import Data", "Reports"]),
+    ("Intelligence", ["Reports", "Activity Log"]),
+    ("System", ["Import Data", "User Accounts"]),
 ]
 
 
@@ -438,3 +439,125 @@ def ensure_txn_ids(tx: pd.DataFrame) -> pd.DataFrame:
         start = int(nums.max()) if nums.notna().any() else 0
         tx.loc[bad, "Txn ID"] = [f"TXN-{start + i + 1:06d}" for i in range(int(bad.sum()))]
     return tx
+
+
+import urllib.parse
+
+
+def whatsapp_invoice_text(row: pd.Series) -> str:
+    party = str(row.get("Party / Company", "Valued Customer"))
+    bill_no = str(row.get("Bill No", "-"))
+    d_val = row.get("Date")
+    d_str = d_val.strftime("%d %b %Y") if pd.notna(d_val) and hasattr(d_val, "strftime") else str(d_val or "-")
+    total = float(row.get("Bill Amount", 0))
+    paid = float(row.get("Paid Amount", 0))
+    balance = float(row.get("Balance", 0))
+    status = str(row.get("Status", "UNPAID"))
+
+    msg = (
+        f"Assalam-o-Alaikum / Dear {party},\n\n"
+        f"This is an update regarding Invoice #{bill_no} from {BUSINESS_NAME}.\n\n"
+        f"📅 Date: {d_str}\n"
+        f"💰 Invoice Total: {CUR} {total:,.0f}\n"
+        f"✅ Paid Amount: {CUR} {paid:,.0f}\n"
+        f"⚠️ Balance Due: {CUR} {balance:,.0f}\n"
+        f"📌 Payment Status: {status}\n\n"
+        f"Thank you for your valuable business!\n"
+        f"Regards,\n{BUSINESS_NAME}"
+    )
+    return msg
+
+
+def whatsapp_url(phone: str, text: str) -> str:
+    cleaned = re.sub(r"[^\d]", "", str(phone or ""))
+    encoded = urllib.parse.quote(text)
+    if cleaned:
+        return f"https://wa.me/{cleaned}?text={encoded}"
+    return f"https://wa.me/?text={encoded}"
+
+
+def thermal_receipt_html(row: pd.Series, items: pd.DataFrame) -> str:
+    d_val = row.get("Date")
+    d_str = d_val.strftime("%d %b %Y") if pd.notna(d_val) and hasattr(d_val, "strftime") else str(d_val or "-")
+    party = escape(str(row.get("Party / Company", "")))
+    bill_no = escape(str(row.get("Bill No", "")))
+    status = escape(str(row.get("Status", "")))
+    subtotal = float(row.get("Subtotal", 0))
+    discount = float(row.get("Discount", 0))
+    tax = float(row.get("Tax", 0))
+    total = float(row.get("Bill Amount", 0))
+    paid = float(row.get("Paid Amount", 0))
+    returns = float(row.get("Return Amount", 0))
+    balance = float(row.get("Balance", 0))
+
+    items_rows = ""
+    if not items.empty:
+        for _, it in items.iterrows():
+            items_rows += f"""
+            <tr>
+                <td style="text-align:left;padding:4px 0;">{escape(str(it.get('Product', '')))}</td>
+                <td style="text-align:center;padding:4px 0;">{float(it.get('Qty', 0)):g}</td>
+                <td style="text-align:right;padding:4px 0;">{float(it.get('Rate', 0)):,.0f}</td>
+                <td style="text-align:right;padding:4px 0;font-weight:600;">{float(it.get('Amount', 0)):,.0f}</td>
+            </tr>
+            """
+    else:
+        prod = escape(str(row.get("Product / Item", "Goods/Services")))
+        qty = float(row.get("Qty", 1))
+        items_rows = f"""
+        <tr>
+            <td style="text-align:left;padding:4px 0;">{prod}</td>
+            <td style="text-align:center;padding:4px 0;">{qty:g}</td>
+            <td style="text-align:right;padding:4px 0;">-</td>
+            <td style="text-align:right;padding:4px 0;font-weight:600;">{subtotal:,.0f}</td>
+        </tr>
+        """
+
+    disc_row = f"<div style='display:flex;justify-content:space-between;padding:2px 0;'><span>Discount:</span><span>- {CUR} {discount:,.0f}</span></div>" if discount > 0 else ""
+    tax_row = f"<div style='display:flex;justify-content:space-between;padding:2px 0;'><span>Tax:</span><span>+ {CUR} {tax:,.0f}</span></div>" if tax > 0 else ""
+    ret_row = f"<div style='display:flex;justify-content:space-between;padding:2px 0;'><span>Returned:</span><span>{CUR} {returns:,.0f}</span></div>" if returns > 0 else ""
+
+    html = f"""
+    <div style="max-width:320px;margin:12px auto;padding:16px;background:#ffffff;color:#1e293b;border:1px dashed #cbd5e1;border-radius:8px;font-family:'Courier New', Courier, monospace;font-size:12px;line-height:1.4;">
+        <div style="text-align:center;margin-bottom:10px;">
+            <div style="font-size:15px;font-weight:800;letter-spacing:1px;text-transform:uppercase;">{escape(BUSINESS_NAME)}</div>
+            <div style="font-size:11px;color:#64748b;">SALE RECEIPT / INVOICE</div>
+        </div>
+        <div style="border-top:1px dashed #94a3b8;border-bottom:1px dashed #94a3b8;padding:6px 0;margin:8px 0;font-size:11px;">
+            <div><b>Bill No:</b> {bill_no}</div>
+            <div><b>Date:</b> {d_str}</div>
+            <div><b>Party:</b> {party}</div>
+            <div><b>Status:</b> {status}</div>
+        </div>
+        <table style="width:100%;font-size:11px;border-collapse:collapse;margin:8px 0;">
+            <thead>
+                <tr style="border-bottom:1px solid #cbd5e1;text-transform:uppercase;color:#475569;">
+                    <th style="text-align:left;padding:4px 0;">Item</th>
+                    <th style="text-align:center;padding:4px 0;">Qty</th>
+                    <th style="text-align:right;padding:4px 0;">Rate</th>
+                    <th style="text-align:right;padding:4px 0;">Amt</th>
+                </tr>
+            </thead>
+            <tbody>
+                {items_rows}
+            </tbody>
+        </table>
+        <div style="border-top:1px dashed #94a3b8;padding-top:6px;font-size:11px;">
+            <div style="display:flex;justify-content:space-between;padding:2px 0;"><span>Subtotal:</span><span>{CUR} {subtotal:,.0f}</span></div>
+            {disc_row}
+            {tax_row}
+            <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;font-weight:800;border-top:1px solid #cbd5e1;margin-top:4px;">
+                <span>Total:</span><span>{CUR} {total:,.0f}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:2px 0;"><span>Paid:</span><span>{CUR} {paid:,.0f}</span></div>
+            {ret_row}
+            <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;font-weight:800;color:#0f172a;background:#f1f5f9;border-radius:4px;padding:4px 6px;margin-top:4px;">
+                <span>Balance Due:</span><span>{CUR} {balance:,.0f}</span>
+            </div>
+        </div>
+        <div style="text-align:center;margin-top:14px;padding-top:8px;border-top:1px dashed #cbd5e1;font-size:10px;color:#64748b;">
+            Thank you for your business!<br/>Computer generated receipt
+        </div>
+    </div>
+    """
+    return html

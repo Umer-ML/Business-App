@@ -11,3 +11,7 @@ services:
         sync: false
       - key: APP_PASSWORD
         sync: false
+      - key: APP_ADMIN_USER
+        sync: false
+      - key: APP_ADMIN_PASSWORD
+        sync: false

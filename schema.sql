@@ -11,8 +11,13 @@ CREATE TABLE IF NOT EXISTS items (
     txn_id TEXT, product TEXT, qty NUMERIC(14,3), rate NUMERIC(14,2), amount NUMERIC(14,2));
 CREATE TABLE IF NOT EXISTS products (product TEXT PRIMARY KEY, unit TEXT, rate NUMERIC(14,2));
 CREATE TABLE IF NOT EXISTS parties (party TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS app_users (
+    username TEXT PRIMARY KEY, password_hash TEXT, full_name TEXT, role TEXT, created_at TIMESTAMP);
+CREATE TABLE IF NOT EXISTS activity_logs (
+    log_id TEXT PRIMARY KEY, log_time TIMESTAMP, user_name TEXT, action TEXT, details TEXT);
 CREATE INDEX IF NOT EXISTS idx_items_txn ON items (txn_id);
 CREATE INDEX IF NOT EXISTS idx_tx_party ON transactions (party);
+CREATE INDEX IF NOT EXISTS idx_logs_time ON activity_logs (log_time);
 
 -- Security: block Supabase's public web API from reading your business data.
 -- (The app connects directly with the database password, so it keeps working.)
@@ -20,3 +25,5 @@ ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE items        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE parties      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app_users    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activity_logs ENABLE ROW LEVEL SECURITY;
