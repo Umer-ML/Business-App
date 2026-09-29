@@ -1,0 +1,24 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Streamlit secrets (DO NOT COMMIT PASSWORDS OR DATABASE CREDENTIALS)
+.streamlit/secrets.toml
+
+# Local database file
+*.db
+local_data.db
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
