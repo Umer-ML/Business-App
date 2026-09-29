@@ -20,13 +20,79 @@ import streamlit as st
 
 import db
 import logic as lg
-from logic import (
-    BUSINESS_NAME, CHEQUE_STATUSES, COLUMNS, CUR, DATE_COLS, GROUPS, ITEM_COLS, MONEY,
-    NEW_PARTY, NO_PRODUCT, PAYMENT_METHODS, PRODUCT_COLS, STATUS_OPTIONS, XLSX,
-    _empty, _txt, commit_import, import_products, invoice_pdf, prepare_import, read_upload,
-    recompute, split_duplicates, thermal_receipt_html, to_excel_bytes, to_pdf_bytes,
-    whatsapp_invoice_text, whatsapp_url,
-)
+
+# Core Constants & Calculations from logic.py
+BUSINESS_NAME = getattr(lg, "BUSINESS_NAME", "Business Management System")
+CHEQUE_STATUSES = getattr(lg, "CHEQUE_STATUSES", ["", "Pending", "Cleared", "Bounced"])
+COLUMNS = getattr(lg, "COLUMNS", [])
+CUR = getattr(lg, "CUR", "Rs.")
+DATE_COLS = getattr(lg, "DATE_COLS", ["Date", "Cheque Date"])
+GROUPS = getattr(lg, "GROUPS", [
+    ("Overview", ["Dashboard"]),
+    ("Transactions", ["New Transaction", "Bills & Payments", "Cheque Tracker"]),
+    ("Records", ["Party Ledger", "Parties Directory", "Search Center", "Products", "Master Database"]),
+    ("Intelligence", ["Reports", "Activity Log"]),
+    ("System", ["Import Data", "User Accounts"]),
+])
+ITEM_COLS = getattr(lg, "ITEM_COLS", ["Txn ID", "Product", "Qty", "Rate", "Amount"])
+MONEY = getattr(lg, "MONEY", set())
+NEW_PARTY = getattr(lg, "NEW_PARTY", "+ Add a new party...")
+NO_PRODUCT = getattr(lg, "NO_PRODUCT", "Select product")
+PAYMENT_METHODS = getattr(lg, "PAYMENT_METHODS", ["Not specified", "Cash", "Cheque", "Bank Transfer", "Other"])
+PRODUCT_COLS = getattr(lg, "PRODUCT_COLS", ["Product", "Unit", "Rate"])
+STATUS_OPTIONS = getattr(lg, "STATUS_OPTIONS", ["UNPAID", "PARTIALLY PAID", "PAID", "CHEQUE PENDING", "RETURNED"])
+XLSX = getattr(lg, "XLSX", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+_empty = getattr(lg, "_empty")
+_txt = getattr(lg, "_txt")
+commit_import = getattr(lg, "commit_import")
+import_products = getattr(lg, "import_products")
+invoice_pdf = getattr(lg, "invoice_pdf")
+prepare_import = getattr(lg, "prepare_import")
+read_upload = getattr(lg, "read_upload")
+recompute = getattr(lg, "recompute")
+split_duplicates = getattr(lg, "split_duplicates")
+
+
+def to_excel_bytes(sheets: dict[str, pd.DataFrame]) -> bytes:
+    return lg.to_excel_bytes(sheets)
+
+
+def to_pdf_bytes(title: str, df: pd.DataFrame) -> bytes:
+    return lg.to_pdf_bytes(title, df)
+
+
+def whatsapp_invoice_text(row: pd.Series) -> str:
+    if hasattr(lg, "whatsapp_invoice_text"):
+        return lg.whatsapp_invoice_text(row)
+    party = str(row.get("Party / Company", "Valued Customer"))
+    bill_no = str(row.get("Bill No", "-"))
+    d_val = row.get("Date")
+    d_str = d_val.strftime("%d %b %Y") if pd.notna(d_val) and hasattr(d_val, "strftime") else str(d_val or "-")
+    total = float(row.get("Bill Amount", 0))
+    paid = float(row.get("Paid Amount", 0))
+    balance = float(row.get("Balance", 0))
+    status = str(row.get("Status", "UNPAID"))
+    return (
+        f"Assalam-o-Alaikum / Dear {party},\n\n"
+        f"Invoice #{bill_no} update from {BUSINESS_NAME}:\n"
+        f"Date: {d_str}\nTotal: {CUR} {total:,.0f}\nPaid: {CUR} {paid:,.0f}\nBalance Due: {CUR} {balance:,.0f}\n"
+        f"Status: {status}\n\nThank you for your business!"
+    )
+
+
+def whatsapp_url(phone: str, text: str) -> str:
+    if hasattr(lg, "whatsapp_url"):
+        return lg.whatsapp_url(phone, text)
+    import urllib.parse
+    cleaned = re.sub(r"[^\d]", "", str(phone or ""))
+    encoded = urllib.parse.quote(text)
+    return f"https://wa.me/{cleaned}?text={encoded}" if cleaned else f"https://wa.me/?text={encoded}"
+
+
+def thermal_receipt_html(row: pd.Series, items: pd.DataFrame) -> str:
+    if hasattr(lg, "thermal_receipt_html"):
+        return lg.thermal_receipt_html(row, items)
+    return f"<div>Receipt #{row.get('Bill No', '')} - Total: {CUR} {row.get('Bill Amount', 0):,.2f}</div>"
 
 # Responsive stretch configuration
 _STRETCH = ({"width": "stretch"} if "width" in inspect.signature(st.dataframe).parameters
